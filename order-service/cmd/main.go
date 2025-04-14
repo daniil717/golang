@@ -2,13 +2,6 @@ package main
 
 import (
 	"context"
-	"inventory-servicee/config"
-	"inventory-servicee/internal/proto"
-	"inventory-servicee/internal/repository"
-	"inventory-servicee/internal/usecase"
-	"inventory-servicee/internal/delivery"
-	"google.golang.org/grpc"
-
 	"log"
 	"net"
 	"os"
@@ -16,16 +9,20 @@ import (
 	"syscall"
 	"time"
 
+	"order-service/config"
+	"order-service/internal/delivery"
+	"order-service/internal/proto"
+	"order-service/internal/repository"
+	"order-service/internal/usecase"
+
+	"google.golang.org/grpc"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"google.golang.org/grpc/reflection"
 )
 
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
+	cfg := config.Load()
 
 	mongoClient, err := connectToMongoDB(cfg.MongoURI)
 	if err != nil {
@@ -39,15 +36,12 @@ func main() {
 
 	db := mongoClient.Database(cfg.MongoDatabase)
 
-	productRepo := repository.NewProductMongoRepository(db)
-	productUsecase := usecase.NewProductUsecase(productRepo)
-	grpcHandler := delivery.NewInventoryGRPCHandler(productUsecase)
+	orderRepo := repository.NewOrderMongoRepository(db)
+	orderUsecase := usecase.NewOrderUsecase(orderRepo)
+	grpcHandler := delivery.NewOrderGRPCHandler(orderUsecase)
 
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(loggingInterceptor),
-	)
-	proto.RegisterInventoryServiceServer(grpcServer, grpcHandler)
-	reflection.Register(grpcServer) 
+	grpcServer := grpc.NewServer()
+	proto.RegisterOrderServiceServer(grpcServer, grpcHandler)
 
 	listener, err := net.Listen("tcp", cfg.GRPCPort)
 	if err != nil {
@@ -55,7 +49,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting gRPC server on %s", cfg.GRPCPort)
+		log.Printf("Order Service is running on %s", cfg.GRPCPort)
 		if err := grpcServer.Serve(listener); err != nil {
 			log.Fatalf("Failed to serve: %v", err)
 		}
@@ -78,13 +72,6 @@ func connectToMongoDB(uri string) (*mongo.Client, error) {
 	}
 
 	return client, nil
-}
-
-func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	start := time.Now()
-	resp, err := handler(ctx, req)
-	log.Printf("Method: %s, Duration: %v, Error: %v", info.FullMethod, time.Since(start), err)
-	return resp, err
 }
 
 func waitForShutdown(server *grpc.Server) {
