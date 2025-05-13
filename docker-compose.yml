@@ -1,0 +1,15 @@
+version: '3.9'
+
+services:
+
+  nats:
+    image: nats:latest
+    ports:
+      - "4222:4222"
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    driver: bridge

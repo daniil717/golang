@@ -2,34 +2,82 @@ package usecase
 
 import (
 	"context"
-	"inventory-servicee/internal/domain"
-	"inventory-servicee/internal/repository"
+	"errors"
+	"inventory-service/internal/model"
+	"inventory-service/internal/repository"
 )
 
 type ProductUsecase struct {
-	repo repository.ProductRepository
+    repo repository.ProductRepository
 }
 
 func NewProductUsecase(repo repository.ProductRepository) *ProductUsecase {
-	return &ProductUsecase{repo: repo}
+    return &ProductUsecase{repo: repo}
 }
 
-func (uc *ProductUsecase) CreateProduct(ctx context.Context, product *domain.Product) error {
-	return uc.repo.Create(ctx, product)
+func (u *ProductUsecase) CreateProduct(ctx context.Context, p *model.Product) (string, error) {
+    if p.Name == "" {
+        return "", errors.New("name is required")
+    }
+    if p.Description == "" {
+        return "", errors.New("description is required")
+    }
+    if p.Category == "" {
+        return "", errors.New("category is required")
+    }
+    if p.Stock < 0 {
+        return "", errors.New("stock cannot be negative")
+    }
+    if p.Price < 0 {
+        return "", errors.New("price cannot be negative")
+    }
+    return u.repo.Create(ctx, p)
 }
 
-func (uc *ProductUsecase) GetProductByID(ctx context.Context, id string) (*domain.Product, error) {
-	return uc.repo.GetByID(ctx, id)
+func (u *ProductUsecase) GetProduct(ctx context.Context, id string) (*model.Product, error) {
+    if id == "" {
+        return nil, errors.New("id is required")
+    }
+    return u.repo.GetByID(ctx, id)
 }
 
-func (uc *ProductUsecase) UpdateProduct(ctx context.Context, id string, product *domain.Product) error {
-	return uc.repo.Update(ctx, id, product)
+func (u *ProductUsecase) UpdateProduct(ctx context.Context, p *model.Product) error {
+    if p.ID == "" {
+        return errors.New("id is required")
+    }
+    // Все поля обязательны — нет частичного обновления
+    if p.Name == "" || p.Description == "" || p.Category == "" {
+        return errors.New("name, description and category are required")
+    }
+    if p.Stock < 0 {
+        return errors.New("stock cannot be negative")
+    }
+    if p.Price < 0 {
+        return errors.New("price cannot be negative")
+    }
+    return u.repo.Update(ctx, p)
 }
 
-func (uc *ProductUsecase) DeleteProduct(ctx context.Context, id string) error {
-	return uc.repo.Delete(ctx, id)
+func (u *ProductUsecase) DeleteProduct(ctx context.Context, id string) error {
+    if id == "" {
+        return errors.New("id is required")
+    }
+    return u.repo.Delete(ctx, id)
 }
 
-func (uc *ProductUsecase) ListProducts(ctx context.Context, limit, offset int32) ([]*domain.Product, error) {
-	return uc.repo.List(ctx, limit, offset)
+func (u *ProductUsecase) ListProducts(ctx context.Context, category string, page, limit int32) ([]*model.Product, error) {
+    // Әдепкі мәндер
+    if page < 1 {
+        page = 1
+    }
+    if limit < 1 {
+        limit = 10 // Мұны өзіңе ыңғайлы мәнге өзгертуге болады
+    }
+
+    return u.repo.List(ctx, category, page, limit)
 }
+
+func (u *ProductUsecase) DecreaseStock(ctx context.Context, productID string, quantity int32) error {
+    return u.repo.DecreaseStock(ctx, productID, quantity)
+}
+

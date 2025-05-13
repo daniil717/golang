@@ -1,33 +1,51 @@
 package config
 
 import (
-	"log"
-	"os"
+    "context"
+    "log"
+    "os"
+    "time"
 
-	"github.com/joho/godotenv"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Config struct {
-	MongoURI      string
-	MongoDatabase string
-	GRPCPort      string
+    Ctx         context.Context
+    Port        string
+    MongoURI    string
+    MongoDBName string
+    Client      *mongo.Client
 }
 
-func Load() (*Config, error) {
-	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
-	}
+func Load() *Config {
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "50053"
+    }
+    uri := os.Getenv("MONGO_URI")
+    if uri == "" {
+        uri = "mongodb://localhost:27017"
+    }
+    dbName := os.Getenv("MONGO_DB")
+    if dbName == "" {
+        dbName = "inventory_db"
+    }
 
-	return &Config{
-		MongoURI:      getEnv("MONGODB_URI", "mongodb://localhost:27017"),
-		MongoDatabase: getEnv("MONGODB_DATABASE", "inventory"),
-		GRPCPort:      getEnv("GRPC_PORT", ":50051"),
-	}, nil
-}
+    // Контекст для подключения
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
+    client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+    if err != nil {
+        log.Fatalf("❌ MongoDB connect error: %v", err)
+    }
+
+    return &Config{
+        Ctx:         context.Background(),
+        Port:        port,
+        MongoURI:    uri,
+        MongoDBName: dbName,
+        Client:      client,
+    }
 }

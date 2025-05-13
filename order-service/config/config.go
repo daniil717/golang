@@ -1,24 +1,41 @@
 package config
 
-import "os"
+import (
+    "context"
+    "log"
+    "os"
+
+    "github.com/joho/godotenv"
+)
 
 type Config struct {
-	MongoURI      string
-	MongoDatabase string
-	GRPCPort      string
+    Ctx         context.Context
+    MongoURI    string
+    MongoDBName string
+    Port        string
+    NATSURL     string
 }
 
 func Load() *Config {
-	return &Config{
-		MongoURI:      getEnv("MONGODB_URI", "mongodb://localhost:27017"),
-		MongoDatabase: getEnv("MONGODB_DATABASE", "order_db"),
-		GRPCPort:      getEnv("GRPC_PORT", ":50052"),
-	}
+    // Попытка загрузить .env файл
+    if err := godotenv.Load("../.env"); err != nil {
+        log.Println("No .env file found, using environment variables directly")
+    }
+
+    // Получение переменных окружения
+    return &Config{
+        Ctx:         context.TODO(),
+        MongoURI:    getEnv("MONGO_URI"),
+        MongoDBName: getEnv("MONGO_DB"),
+        Port:        getEnv("PORT"),
+        NATSURL:    getEnv("NATS_URL"),
+    }
 }
 
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
+func getEnv(key string) string {
+    value := os.Getenv(key)
+    if value == "" {
+        log.Fatalf("Environment variable %s is not set", key)
+    }
+    return value
 }

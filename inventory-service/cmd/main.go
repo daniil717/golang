@@ -1,98 +1,53 @@
 package main
 
 import (
-	"context"
-	"inventory-servicee/config"
-	"inventory-servicee/internal/proto"
-	"inventory-servicee/internal/repository"
-	"inventory-servicee/internal/usecase"
-	"inventory-servicee/internal/delivery"
-	"google.golang.org/grpc"
-
-	"log"
-	"net"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"google.golang.org/grpc/reflection"
+    "fmt"
+    "log"
+    "net"
+    "inventory-service/config"
+    "inventory-service/internal/handler"
+    "inventory-service/internal/pb"
+    "inventory-service/internal/repository"
+    "inventory-service/internal/usecase"
+    "inventory-service/internal/events"
+    "github.com/nats-io/nats.go"
+    "google.golang.org/grpc"
 )
 
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
+    cfg := config.Load()
+    defer cfg.Client.Disconnect(cfg.Ctx)
 
-	mongoClient, err := connectToMongoDB(cfg.MongoURI)
-	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
-	}
-	defer func() {
-		if err := mongoClient.Disconnect(context.Background()); err != nil {
-			log.Printf("Failed to disconnect MongoDB: %v", err)
-		}
-	}()
+    coll := cfg.Client.Database(cfg.MongoDBName).Collection("products")
 
-	db := mongoClient.Database(cfg.MongoDatabase)
+    repo := repository.NewMongoProductRepository(coll)
+    uc   := usecase.NewProductUsecase(repo)
+    h    := handler.NewProductHandler(uc)
 
-	productRepo := repository.NewProductMongoRepository(db)
-	productUsecase := usecase.NewProductUsecase(productRepo)
-	grpcHandler := delivery.NewInventoryGRPCHandler(productUsecase)
+    natsConn, err := nats.Connect("nats://localhost:4222")
+    if err != nil {
+        log.Fatalf("❌ NATS connection failed: %v", err)
+    }
+    defer natsConn.Close()
 
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(loggingInterceptor),
-	)
-	proto.RegisterInventoryServiceServer(grpcServer, grpcHandler)
-	reflection.Register(grpcServer) 
+    consumer := queue.NewConsumer(natsConn, "order.created", uc)
+    go func() {
+        if err := consumer.Subscribe(cfg.Ctx); err != nil {
+            log.Fatalf("❌ Failed to subscribe to order.created: %v", err)
+        }
+        log.Println("📥 NATS subscription active on 'order.created'")
+    }()
 
-	listener, err := net.Listen("tcp", cfg.GRPCPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
+    lis, err := net.Listen("tcp", ":"+cfg.Port)
+    if err != nil {
+        log.Fatalf("listen error: %v", err)
+    }
 
-	go func() {
-		log.Printf("Starting gRPC server on %s", cfg.GRPCPort)
-		if err := grpcServer.Serve(listener); err != nil {
-			log.Fatalf("Failed to serve: %v", err)
-		}
-	}()
+    srv := grpc.NewServer()
+    pb.RegisterInventoryServiceServer(srv, h)
 
-	waitForShutdown(grpcServer)
-}
-
-func connectToMongoDB(uri string) (*mongo.Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		return nil, err
-	}
-
-	if err = client.Ping(ctx, nil); err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-func loggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	start := time.Now()
-	resp, err := handler(ctx, req)
-	log.Printf("Method: %s, Duration: %v, Error: %v", info.FullMethod, time.Since(start), err)
-	return resp, err
-}
-
-func waitForShutdown(server *grpc.Server) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Println("Shutting down server...")
-	server.GracefulStop()
-	log.Println("Server stopped")
+    fmt.Printf("🔆 InventoryService on port %s\n", cfg.Port)
+    if err := srv.Serve(lis); err != nil {
+        log.Fatalf("serve error: %v", err)
+    }
 }
