@@ -11,7 +11,7 @@ import (
 	"order-service/internal/pb"
 	"order-service/internal/repository"
 	"order-service/internal/usecase"
-
+	"order-service/internal/redis"
 	"github.com/nats-io/nats.go"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -34,6 +34,8 @@ func main() {
 		log.Fatalf("❌ NATS connection failed: %v", err)
 	}
 	defer nc.Close()
+
+	redis.Init(cfg.RedisURL)
 
 	publisher, err := queue.NewNATSPublisher(nc)
 	if err != nil {

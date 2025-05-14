@@ -14,6 +14,7 @@ type Config struct {
     MongoDBName string
     Port        string
     NATSURL     string
+    RedisURL    string // Redis URL қосылды
 }
 
 func Load() *Config {
@@ -29,6 +30,7 @@ func Load() *Config {
         MongoDBName: getEnv("MONGO_DB"),
         Port:        getEnv("PORT"),
         NATSURL:    getEnv("NATS_URL"),
+        RedisURL:    getEnv("REDIS_URL"), // Redis URL-ді қосу
     }
 }
 

@@ -10,6 +10,7 @@ import (
     "inventory-service/internal/repository"
     "inventory-service/internal/usecase"
     "inventory-service/internal/events"
+    "inventory-service/internal/redis"
     "github.com/nats-io/nats.go"
     "google.golang.org/grpc"
 )
@@ -17,6 +18,8 @@ import (
 func main() {
     cfg := config.Load()
     defer cfg.Client.Disconnect(cfg.Ctx)
+    
+    redis.InitRedis()
 
     coll := cfg.Client.Database(cfg.MongoDBName).Collection("products")
 

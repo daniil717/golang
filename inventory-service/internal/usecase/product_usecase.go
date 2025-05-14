@@ -3,8 +3,11 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"inventory-service/internal/model"
+	"inventory-service/internal/redis"
 	"inventory-service/internal/repository"
+	"time"
 )
 
 type ProductUsecase struct {
@@ -38,14 +41,34 @@ func (u *ProductUsecase) GetProduct(ctx context.Context, id string) (*model.Prod
     if id == "" {
         return nil, errors.New("id is required")
     }
-    return u.repo.GetByID(ctx, id)
+
+    key := fmt.Sprintf("product:%s", id)
+
+    // 1. Redis кэштен іздеу
+    cached, err := redis.GetFromCache[model.Product](key)
+    if err != nil {
+        return nil, err
+    }
+    if cached != nil {
+        return cached, nil
+    }
+
+    // 2. Базадан алу
+    product, err := u.repo.GetByID(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+
+    // 3. Redis-ке сақтау
+    _ = redis.SetToCache(key, product, time.Hour)
+
+    return product, nil
 }
 
 func (u *ProductUsecase) UpdateProduct(ctx context.Context, p *model.Product) error {
     if p.ID == "" {
         return errors.New("id is required")
     }
-    // Все поля обязательны — нет частичного обновления
     if p.Name == "" || p.Description == "" || p.Category == "" {
         return errors.New("name, description and category are required")
     }
@@ -55,7 +78,17 @@ func (u *ProductUsecase) UpdateProduct(ctx context.Context, p *model.Product) er
     if p.Price < 0 {
         return errors.New("price cannot be negative")
     }
-    return u.repo.Update(ctx, p)
+
+    err := u.repo.Update(ctx, p)
+    if err != nil {
+        return err
+    }
+
+    // Кэшті өшіру
+    key := fmt.Sprintf("product:%s", p.ID)
+    _ = redis.DeleteCache(key)
+
+    return nil
 }
 
 func (u *ProductUsecase) DeleteProduct(ctx context.Context, id string) error {

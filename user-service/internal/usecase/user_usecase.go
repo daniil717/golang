@@ -2,12 +2,15 @@
 package usecase
 
 import (
-    "context"
-    "errors"
-    "user-service/internal/model"
-    "user-service/internal/repository"
+	"context"
+	"errors"
+	"fmt"
+	"time"
+	"user-service/internal/model"
+	"user-service/internal/redis"
+	"user-service/internal/repository"
 
-    "golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserUsecase struct {
@@ -35,7 +38,27 @@ func (u *UserUsecase) GetUserByID(ctx context.Context, id string) (*model.User, 
     if id == "" {
         return nil, errors.New("id is required")
     }
-    return u.repo.FindByID(ctx, id)
+
+    // 1. Redis-ке сұрау
+    cacheKey := fmt.Sprintf("user:%s", id)
+    cachedUser, err := redis.GetFromCache[model.User](cacheKey)
+    if err != nil {
+        return nil, err
+    }
+    if cachedUser != nil {
+        return cachedUser, nil
+    }
+
+    // 2. Реподан алу
+    user, err := u.repo.FindByID(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+
+    // 3. Redis-ке жазу
+    _ = redis.SetToCache(cacheKey, user, 10*time.Minute)
+
+    return user, nil
 }
 
 func (u *UserUsecase) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {

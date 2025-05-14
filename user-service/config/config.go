@@ -15,6 +15,7 @@ type Config struct {
     MongoURI    string
     MongoDBName string
     JWTSecret   string
+    RedisAddr string // жаңа өріс
 }
 
 func Load() *Config {

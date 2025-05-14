@@ -16,6 +16,8 @@ type Config struct {
     MongoURI    string
     MongoDBName string
     Client      *mongo.Client
+    RedisAddr    string // Redis адресі
+    RedisPassword string // Redis паролі
 }
 
 func Load() *Config {
@@ -30,6 +32,15 @@ func Load() *Config {
     dbName := os.Getenv("MONGO_DB")
     if dbName == "" {
         dbName = "inventory_db"
+    }
+    redisAddr := os.Getenv("REDIS_ADDR")
+    if redisAddr == "" {
+        redisAddr = "localhost:6379" // Redis әдепкі адресі
+    }
+
+    redisPassword := os.Getenv("REDIS_PASSWORD")
+    if redisPassword == "" {
+        redisPassword = "" // Redis әдепкі пароль жоқ
     }
 
     // Контекст для подключения
@@ -47,5 +58,7 @@ func Load() *Config {
         MongoURI:    uri,
         MongoDBName: dbName,
         Client:      client,
+        RedisAddr:     redisAddr,
+        RedisPassword: redisPassword,
     }
 }
