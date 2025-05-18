@@ -61,3 +61,17 @@ func SetToCache(key string, value any, ttl time.Duration) error {
 func DeleteCache(key string) error {
     return Client.Del(Ctx, key).Err()
 }
+func InitRedisWithParams(addr, password string, db int) error {
+    Client = redis.NewClient(&redis.Options{
+        Addr:     addr,
+        Password: password,
+        DB:       db,
+    })
+
+    _, err := Client.Ping(Ctx).Result()
+    if err != nil {
+        return err
+    }
+    log.Println("✅ Redis connection established")
+    return nil
+}

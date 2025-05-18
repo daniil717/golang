@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"inventory-service/internal/model"
+	"inventory-service/internal/redis"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -32,8 +34,13 @@ func (r *MongoProductRepository) DecreaseStock(ctx context.Context, productID st
         return errors.New("not enough stock or product not found")
     }
 
+    // Redis кэшін өшіру
+    cacheKey := fmt.Sprintf("product:%s", productID)
+    _ = redis.DeleteCache(cacheKey)
+
     return nil
 }
+
 
 
 func NewMongoProductRepository(coll *mongo.Collection) *MongoProductRepository {
@@ -116,17 +123,23 @@ func (r *MongoProductRepository) Update(ctx context.Context, p *model.Product) e
 }
 
 func (r *MongoProductRepository) Delete(ctx context.Context, id string) error {
-    oid, err := primitive.ObjectIDFromHex(id)
+    objID, err := primitive.ObjectIDFromHex(id)
     if err != nil {
-        return errors.New("invalid ID format")
+        return errors.New("invalid product ID")
     }
-    res, err := r.coll.DeleteOne(ctx, bson.M{"_id": oid})
+
+    res, err := r.coll.DeleteOne(ctx, bson.M{"_id": objID})
     if err != nil {
         return err
     }
     if res.DeletedCount == 0 {
         return errors.New("product not found")
     }
+
+    // Кэшті өшіру
+    cacheKey := fmt.Sprintf("product:%s", id)
+    _ = redis.DeleteCache(cacheKey)
+
     return nil
 }
 

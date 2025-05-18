@@ -13,3 +13,4 @@ type ProductRepository interface {
     List(ctx context.Context, category string, page, limit int32) ([]*model.Product, error)
     DecreaseStock(ctx context.Context, productID string, quantity int32) error
 }
+
