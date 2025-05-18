@@ -33,34 +33,32 @@ func (u *OrderUsecase) CreateOrder(ctx context.Context, order *model.Order) (str
 		order.Status = "PENDING"
 	}
 
-	// Basic validation for ProductID (ensure it's not a name, but this needs more robust validation)
 	for _, product := range order.Products {
 		if product.ProductID == "" {
 			return "", errors.New("invalid product ID in order")
 		}
-		// Ideally, validate that ProductID looks like a MongoDB ObjectID (e.g., 24-character hex string)
 		if len(product.ProductID) != 24 {
 			log.Printf("Warning: ProductID %s does not match expected ObjectID format", product.ProductID)
 		}
 	}
 
-	// Save the order to the database
 	id, err := u.repo.Create(ctx, order)
 	if err != nil {
 		return "", err
 	}
 	order.ID = id
 
-	// Publish to NATS
-	err = u.publisher.PublishOrderCreated(ctx, order)
-	if err != nil {
-		log.Printf("[NATS] to publish order.created event: %v", err)
-		
-		// Log the error but don't fail the request (fire-and-forget)
+	// ✅ NATS publisher бар ма, соны тексер
+	if u.publisher != nil {
+		err = u.publisher.PublishOrderCreated(ctx, order)
+		if err != nil {
+			log.Printf("[NATS] failed to publish order.created event: %v", err)
+		}
 	}
 
 	return id, nil
 }
+
 
 func (u *OrderUsecase) GetOrder(ctx context.Context, id string) (*model.Order, error) {
 	if id == "" {
