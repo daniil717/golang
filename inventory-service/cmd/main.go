@@ -1,56 +1,65 @@
 package main
 
 import (
-    "fmt"
-    "log"
-    "net"
-    "inventory-service/config"
-    "inventory-service/internal/handler"
-    "inventory-service/internal/pb"
-    "inventory-service/internal/repository"
-    "inventory-service/internal/usecase"
-    "inventory-service/internal/events"
-    "inventory-service/internal/redis"
-    "github.com/nats-io/nats.go"
-    "google.golang.org/grpc"
+	"log"
+	"net"
+
+	"inventory-service/config"
+	"inventory-service/internal/db/migration"
+	queue "inventory-service/internal/events"
+	"inventory-service/internal/handler"
+	"inventory-service/internal/pb"
+	"inventory-service/internal/redis"
+	"inventory-service/internal/repository"
+	"inventory-service/internal/usecase"
+
+	"github.com/nats-io/nats.go"
+	"google.golang.org/grpc"
 )
 
 func main() {
-    cfg := config.Load()
-    defer cfg.Client.Disconnect(cfg.Ctx)
-    
-    redis.InitRedis()
+	cfg := config.Load()
+	defer cfg.Client.Disconnect(cfg.Ctx)
 
-    coll := cfg.Client.Database(cfg.MongoDBName).Collection("products")
+	redis.InitRedis()
 
-    repo := repository.NewMongoProductRepository(coll)
-    uc   := usecase.NewProductUsecase(repo)
-    h    := handler.NewProductHandler(uc)
+	dbInstance := cfg.Client.Database(cfg.MongoDBName)
 
-    natsConn, err := nats.Connect("nats://localhost:4222")
-    if err != nil {
-        log.Fatalf("❌ NATS connection failed: %v", err)
-    }
-    defer natsConn.Close()
+	// Выполнение миграции вручную
+	if err := migration.MigrateUp(dbInstance); err != nil {
+		log.Fatalf("Migration up failed: %v", err)
+	}
+	log.Println("✅ Mongo migrations applied successfully")
 
-    consumer := queue.NewConsumer(natsConn, "order.created", uc)
-    go func() {
-        if err := consumer.Subscribe(cfg.Ctx); err != nil {
-            log.Fatalf("❌ Failed to subscribe to order.created: %v", err)
-        }
-        log.Println("📥 NATS subscription active on 'order.created'")
-    }()
+	coll := dbInstance.Collection("products")
+	repo := repository.NewMongoProductRepository(coll)
+	uc := usecase.NewProductUsecase(repo)
+	h := handler.NewProductHandler(uc)
 
-    lis, err := net.Listen("tcp", ":"+cfg.Port)
-    if err != nil {
-        log.Fatalf("listen error: %v", err)
-    }
+	natsConn, err := nats.Connect("nats://localhost:4222")
+	if err != nil {
+		log.Fatalf("❌ NATS connection failed: %v", err)
+	}
+	defer natsConn.Close()
 
-    srv := grpc.NewServer()
-    pb.RegisterInventoryServiceServer(srv, h)
+	consumer := queue.NewConsumer(natsConn, "order.created", uc)
+	go func() {
+		if err := consumer.Subscribe(cfg.Ctx); err != nil {
+			log.Fatalf("❌ Failed to subscribe to order.created: %v", err)
+		}
+		log.Println("📥 NATS subscription active on 'order.created'")
+	}()
 
-    fmt.Printf("🔆 InventoryService on port %s\n", cfg.Port)
-    if err := srv.Serve(lis); err != nil {
-        log.Fatalf("serve error: %v", err)
-    }
+	lis, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		log.Fatalf("listen error: %v", err)
+	}
+
+	srv := grpc.NewServer()
+	pb.RegisterInventoryServiceServer(srv, h)
+
+	log.Printf("🔆 InventoryService on port %s\n", cfg.Port)
+	if err := srv.Serve(lis); err != nil {
+		log.Fatalf("serve error: %v", err)
+	}
 }
