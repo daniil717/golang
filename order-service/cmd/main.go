@@ -6,12 +6,13 @@ import (
 	"net"
 
 	"order-service/config"
-	"order-service/internal/events"
+	queue "order-service/internal/events"
 	"order-service/internal/handler"
 	"order-service/internal/pb"
+	"order-service/internal/redis"
 	"order-service/internal/repository"
 	"order-service/internal/usecase"
-	"order-service/internal/redis"
+
 	"github.com/nats-io/nats.go"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -29,7 +30,7 @@ func main() {
 	defer client.Disconnect(cfg.Ctx)
 
 	// NATS
-	nc, err := nats.Connect(cfg.NATSURL) 
+	nc, err := nats.Connect(cfg.NATSURL)
 	if err != nil {
 		log.Fatalf("❌ NATS connection failed: %v", err)
 	}
@@ -43,7 +44,7 @@ func main() {
 	}
 
 	orderRepo := repository.NewMongoOrderRepository(client.Database(cfg.MongoDBName).Collection("orders"))
-	orderUsecase := usecase.NewOrderUsecase(orderRepo, publisher) 
+	orderUsecase := usecase.NewOrderUsecase(orderRepo, publisher)
 
 	orderHandler := handler.NewOrderHandler(orderUsecase, publisher)
 

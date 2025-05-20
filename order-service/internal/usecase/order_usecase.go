@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"order-service/internal/events"
+	queue "order-service/internal/events"
 	"order-service/internal/model"
 	"order-service/internal/redis"
 	"order-service/internal/repository"
@@ -58,7 +58,6 @@ func (u *OrderUsecase) CreateOrder(ctx context.Context, order *model.Order) (str
 
 	return id, nil
 }
-
 
 func (u *OrderUsecase) GetOrder(ctx context.Context, id string) (*model.Order, error) {
 	if id == "" {

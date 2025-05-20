@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"api-gateway/config"
 	"api-gateway/internal/pb/inventory"
@@ -25,19 +26,16 @@ type Handler struct {
 
 // NewHandler initializes gRPC clients and returns a Handler
 func NewHandler(cfg *config.Config) (*Handler, error) {
-	// Connect to inventory service
 	inventoryConn, err := grpc.Dial(cfg.InventoryService, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
-	// Connect to order service
 	orderConn, err := grpc.Dial(cfg.OrderService, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
-	// Connect to user service
 	userConn, err := grpc.Dial(cfg.UserService, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
@@ -70,13 +68,11 @@ func (h *Handler) CreateProduct(c *gin.Context) {
 func (h *Handler) GetProduct(c *gin.Context) {
 	id := c.Param("id")
 	req := &inventory.GetProductRequest{Id: id}
-
 	resp, err := h.inventoryClient.GetProduct(context.Background(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp.Product)
 }
 
@@ -86,26 +82,22 @@ func (h *Handler) UpdateProduct(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	resp, err := h.inventoryClient.UpdateProduct(context.Background(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp.Product)
 }
 
 func (h *Handler) DeleteProduct(c *gin.Context) {
 	id := c.Param("id")
 	req := &inventory.DeleteProductRequest{Id: id}
-
 	resp, err := h.inventoryClient.DeleteProduct(context.Background(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": resp.Message})
 }
 
@@ -134,7 +126,6 @@ func (h *Handler) ListProducts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp.Products)
 }
 
@@ -145,26 +136,22 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	resp, err := h.orderClient.CreateOrder(context.Background(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusCreated, gin.H{"id": resp.Id, "message": resp.Message})
 }
 
 func (h *Handler) GetOrder(c *gin.Context) {
 	id := c.Param("id")
 	req := &order.GetOrderRequest{Id: id}
-
 	resp, err := h.orderClient.GetOrder(context.Background(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -174,26 +161,22 @@ func (h *Handler) UpdateOrderStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	resp, err := h.orderClient.UpdateOrderStatus(context.Background(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"id": resp.Id, "message": resp.Message})
 }
 
 func (h *Handler) ListUserOrders(c *gin.Context) {
 	userID := c.Query("user_id")
 	req := &order.ListUserOrdersRequest{UserId: userID}
-
 	resp, err := h.orderClient.ListUserOrders(context.Background(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp.Orders)
 }
 
@@ -201,46 +184,55 @@ func (h *Handler) ListUserOrders(c *gin.Context) {
 func (h *Handler) RegisterUser(c *gin.Context) {
 	var req user.UserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 		return
 	}
-
 	resp, err := h.userClient.RegisterUser(context.Background(), &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("RegisterUser failed: %v", err)
+		errMsg := err.Error()
+		switch {
+		case strings.Contains(errMsg, "username already exists"):
+			c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
+		case strings.Contains(errMsg, "password"):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Password too short"})
+		case strings.Contains(errMsg, "email"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email format"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		}
 		return
 	}
-
 	c.JSON(http.StatusCreated, gin.H{"id": resp.Id, "message": resp.Message})
 }
 
 func (h *Handler) AuthenticateUser(c *gin.Context) {
 	var req user.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid login request"})
 		return
 	}
-
 	resp, err := h.userClient.AuthenticateUser(context.Background(), &req)
 	if err != nil {
 		log.Printf("AuthenticateUser failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "user not found") || strings.Contains(errMsg, "incorrect password") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		}
 		return
 	}
-
-	log.Printf("User authenticated: username=%s, token=%s", req.Username, resp.Token)
 	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "message": resp.Message})
 }
 
 func (h *Handler) GetUserProfile(c *gin.Context) {
 	id := c.Param("id")
 	req := &user.UserID{Id: id}
-
 	resp, err := h.userClient.GetUserProfile(context.Background(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, resp)
 }

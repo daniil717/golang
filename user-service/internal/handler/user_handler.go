@@ -10,7 +10,6 @@ import (
 	"user-service/internal/usecase"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -69,22 +68,24 @@ func (h *UserHandler) AuthenticateUser(ctx context.Context, req *pb.AuthRequest)
 	if req.Password == "" {
 		return nil, status.Error(codes.InvalidArgument, "password is required")
 	}
-	user, err := h.uc.GetUserByUsername(ctx, req.Username)
+
+	user, err := h.uc.AuthenticateUser(ctx, req.Username, req.Password)
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "user not found")
-	}
-	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
+		switch err.Error() {
+		case "user not found":
+			return nil, status.Error(codes.NotFound, "user not found")
+		case "incorrect password":
+			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
+		default:
+			return nil, status.Errorf(codes.Internal, "authentication failed: %v", err)
+		}
 	}
 
-	// Generate a real JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": user.ID,                                // Subject (user ID)
-		"exp": time.Now().Add(time.Hour * 24).Unix(),  // Expires in 24 hours
-		"iat": time.Now().Unix(),                      // Issued at
+		"sub": user.ID,
+		"exp": time.Now().Add(time.Hour * 24).Unix(),
+		"iat": time.Now().Unix(),
 	})
-
-	// Sign the token with the secret
 	tokenString, err := token.SignedString([]byte(h.jwtSecret))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to generate token")

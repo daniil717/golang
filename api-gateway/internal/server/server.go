@@ -1,10 +1,14 @@
 package server
 
 import (
-	"fmt"
 	"api-gateway/config"
-	"api-gateway/internal/handlers"
+	handler "api-gateway/internal/handlers"
 	"api-gateway/internal/middleware"
+	"fmt"
+
+	"time"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,6 +21,16 @@ type Server struct {
 // NewServer initializes the server with routes and middleware
 func NewServer(cfg *config.Config) *Server {
 	r := gin.New()
+
+	// ✅ Custom CORS config that allows Authorization headers and local frontend
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://127.0.0.1:5500"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Authorization", "Content-Type"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// Initialize handlers
 	h, err := handler.NewHandler(cfg)
@@ -46,7 +60,7 @@ func NewServer(cfg *config.Config) *Server {
 		protected.DELETE("/inventory/:id", h.DeleteProduct)
 		protected.GET("/inventory", h.ListProducts)
 
-		// Order routes	
+		// Order routes
 		protected.POST("/orders", h.CreateOrder)
 		protected.GET("/orders/:id", h.GetOrder)
 		protected.PUT("/orders/:id/status", h.UpdateOrderStatus)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 
 	"user-service/config"
 	"user-service/internal/handler"
@@ -17,29 +18,40 @@ import (
 )
 
 func main() {
-    cfg := config.Load()
+	cfg := config.Load()
 
-    client, err := mongo.Connect(cfg.Ctx, options.Client().ApplyURI(cfg.MongoURI))
-    if err != nil {
-        log.Fatalf("Mongo connect error: %v", err)
-    }
-    defer client.Disconnect(cfg.Ctx)
+	cfg.JWTSecret = os.Getenv("JWT_SECRET")
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET is not set")
+	}
 
-    col := client.Database(cfg.MongoDBName).Collection("users")
-    userRepo := repository.NewMongoUserRepository(col)
-    userUC := usecase.NewUserUsecase(userRepo)
-    userHandler := handler.NewUserHandler(userUC, cfg.JWTSecret) // Pass jwtSecret from config
+	// ✅ Принудительно подгружаем JWT_SECRET из окружения
+	cfg.JWTSecret = os.Getenv("JWT_SECRET")
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is not set")
+	}
 
-    lis, err := net.Listen("tcp", ":"+cfg.Port)
-    if err != nil {
-        log.Fatalf("Listen error: %v", err)
-    }
+	client, err := mongo.Connect(cfg.Ctx, options.Client().ApplyURI(cfg.MongoURI))
+	if err != nil {
+		log.Fatalf("Mongo connect error: %v", err)
+	}
+	defer client.Disconnect(cfg.Ctx)
 
-    grpcServer := grpc.NewServer()
-    pb.RegisterUserServiceServer(grpcServer, userHandler)
+	col := client.Database(cfg.MongoDBName).Collection("users")
+	userRepo := repository.NewMongoUserRepository(col)
+	userUC := usecase.NewUserUsecase(userRepo)
+	userHandler := handler.NewUserHandler(userUC, cfg.JWTSecret)
 
-    fmt.Printf("UserService running on :%s\n", cfg.Port)
-    if err := grpcServer.Serve(lis); err != nil {
-        log.Fatalf("Serve error: %v", err)
-    }
+	lis, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		log.Fatalf("Listen error: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	pb.RegisterUserServiceServer(grpcServer, userHandler)
+
+	fmt.Printf("UserService running on :%s\n", cfg.Port)
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("Serve error: %v", err)
+	}
 }
